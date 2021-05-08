@@ -66,8 +66,10 @@ int __cdecl main(void)
     }
     // Accept a client socket
     while (1) {
-        std::cout << "[" << i_connections << "]" << " Waiting for client...\n";
+        //std::cout << "[" << i_connections << "]" << " Waiting for client...\n";
+
         ClientSocket = accept(ListenSocket, NULL, NULL);
+
         if (ClientSocket == INVALID_SOCKET) {
             printf("accept failed with error: %d\n", WSAGetLastError());
             closesocket(ListenSocket);
@@ -76,6 +78,7 @@ int __cdecl main(void)
         }
         std::thread connection(manageConnection, ClientSocket);
         connection.detach();
+        ClientSocket = 0;
     }
     closesocket(ClientSocket);
     WSACleanup();
@@ -87,8 +90,8 @@ void manageConnection(SOCKET s)
 {
     char recvbuf[2048];
     int ClientSocket = s, recievedpackets = 0, iResult, iSendResult;
-    std::cout << "Client connected...\n";
     i_connections += 1;
+    std::cout << "[" << i_connections << "]" << " Client connected...\n";
     std::ifstream filein("C:\\dll_test_new.dll", std::ios::binary);
     //std::ifstream filein("C:\\img.jpeg", std::ios::binary);
 
@@ -97,17 +100,24 @@ void manageConnection(SOCKET s)
         iResult = recv(ClientSocket, recvbuf, 2048, 0);
         if (iResult == -1)
         {
+            printf("[%o] Client disconnected", i_connections);
             i_connections -= 1;
-            WSACleanup();
+            //WSACleanup();
             return;
         }
         //std::string recvstr(encryptDecrypt(recvbuf));
         std::string out = encryptDecrypt(recvbuf);
         recievedpackets += 1;
 
-        if (std::string(out).substr(0, out.size() - 1).find("loginfatcock") == std::string::npos
+        if (std::string(out).find("loginfatcock") == std::string::npos
             && recievedpackets == 1)
+        {
+            i_connections -= 1;
+            printf("[%o] Client disconnected: recieved %s\n", i_connections, std::string(out).c_str());
+            closesocket(ClientSocket);
+            //WSACleanup();
             return;
+        }
         if (std::string(out) == "clone"
             && recievedpackets == 2)
         {
@@ -140,31 +150,42 @@ void manageConnection(SOCKET s)
 
                     iSendResult = send(ClientSocket, sendbuffer.c_str(), 2048, 0);
                     if (iSendResult == -1) {
+                        printf("[%o] Client disconnected", i_connections);
                         i_connections -= 1;
-                        WSACleanup();
+                        //WSACleanup();
                         return;
                     }
                     printf("\b%o", i);
                     iResult = recv(ClientSocket, recvbuf, 2048, 0);
                     if (iResult == -1) {
+                        printf("[%o] Client disconnected", i_connections);
                         i_connections -= 1;
-                        WSACleanup();
+                        //WSACleanup();
                         return;
                     }
                     std::string retstr = encryptDecrypt(recvbuf);
                     //printf("\n%s", retstr);
                     if (retstr.find("dOK") == std::string::npos)
                         break;
-                    //SleepEx(250, false);
+                    SleepEx(250, false);
                 }
                 catch (...) 
                 {
                     printf("[%o] An error occured when sending.", i_connections); 
-                    WSACleanup();
+                   // WSACleanup();
                     i_connections -= 1;
                     return;
                 }
             }
+            printf("\n");
+        }
+        else if(std::string(out).find("goodbye") != std::string::npos)
+        {
+            i_connections -= 1;
+            printf("[%o] Client disconnected: recieved %s\n", i_connections, std::string(out).c_str());
+            closesocket(ClientSocket);
+            return;
+            //WSACleanup();
         }
         if (recievedpackets != 1) continue;
         filein.seekg(0, filein.end);
@@ -177,11 +198,13 @@ void manageConnection(SOCKET s)
 
         if (iSendResult == -1) {
             i_connections -= 1;
-            WSACleanup();
+            printf("[%o] Client disconnected: recieved %s\n", i_connections, std::string(out).c_str());
+            closesocket(ClientSocket);
+            //WSACleanup();
             return;
         }
-        printf("Bytes sent: %d\n", iSendResult);
-    } while (1);
+        printf("[%o] Bytes sent: %d\n", i_connections, iSendResult);
+    } while (ClientSocket != -1);
 }
 
 std::string encryptDecrypt(std::string toEncrypt) {

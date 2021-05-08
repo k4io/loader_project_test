@@ -111,7 +111,9 @@ int __cdecl main(int argc, char** argv)
 
                 send(ConnectSocket, encryptDecrypt("dOK").c_str(), 2048, 0);
             }
-
+            send(ConnectSocket, encryptDecrypt("goodbye").c_str(), 2048, 0);
+            closesocket(ConnectSocket);
+            WSACleanup();
             printf("Filearray: %o\n", filearray.size());
 
             //std::ofstream fileout("dll_test_out123.dll", std::ios::out | std::ios::binary);
