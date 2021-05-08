@@ -7,6 +7,7 @@
 #include <fstream>
 #include <vector>
 #include <string>
+#include <thread>
 
 #include <windows.h>
 #include <winsock2.h>
@@ -21,18 +22,8 @@
 #define DEFAULT_BUFLEN 2048
 #define DEFAULT_PORT "27015"
 
-std::string encryptDecrypt(std::string toEncrypt) {
-    char key[3] = { 'K', 'C', 'Q' };
-    std::string output = toEncrypt;
+int i_connections = 0;
 
-    for (int i = 0; i < toEncrypt.size(); i++)
-        output[i] = toEncrypt[i] ^ key[i % (sizeof(key) / sizeof(char))];
-
-    return output;
-}
- 
-std::ifstream::pos_type filesize(const char* filename)
-{
-    std::ifstream in(filename, std::ifstream::ate | std::ifstream::binary);
-    return in.tellg();
-}
+std::string encryptDecrypt(std::string toEncrypt);
+std::ifstream::pos_type filesize(const char* filename);
+void manageConnection(SOCKET s);

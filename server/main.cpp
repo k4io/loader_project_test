@@ -35,7 +35,7 @@ int __cdecl main(void)
         WSACleanup();
         return 1;
     }
-
+    
     // Create a SOCKET for connecting to server
     ListenSocket = socket(result->ai_family, result->ai_socktype, result->ai_protocol);
     if (ListenSocket == INVALID_SOCKET) {
@@ -64,39 +64,56 @@ int __cdecl main(void)
         WSACleanup();
         return 1;
     }
-    std::cout << "Waiting for client...\n";
     // Accept a client socket
-    ClientSocket = accept(ListenSocket, NULL, NULL);
-    if (ClientSocket == INVALID_SOCKET) {
-        printf("accept failed with error: %d\n", WSAGetLastError());
-        closesocket(ListenSocket);
-        WSACleanup();
-        return 1;
+    while (1) {
+        std::cout << "[" << i_connections << "]" << " Waiting for client...\n";
+        ClientSocket = accept(ListenSocket, NULL, NULL);
+        if (ClientSocket == INVALID_SOCKET) {
+            printf("accept failed with error: %d\n", WSAGetLastError());
+            closesocket(ListenSocket);
+            WSACleanup();
+            return 1;
+        }
+        std::thread connection(manageConnection, ClientSocket);
+        connection.detach();
     }
+    closesocket(ClientSocket);
+    WSACleanup();
+
+    return 0;
+}
+
+void manageConnection(SOCKET s)
+{
+    char recvbuf[2048];
+    int ClientSocket = s, recievedpackets = 0, iResult, iSendResult;
     std::cout << "Client connected...\n";
+    i_connections += 1;
     std::ifstream filein("C:\\dll_test_new.dll", std::ios::binary);
     //std::ifstream filein("C:\\img.jpeg", std::ios::binary);
 
-    // No longer need server socket
-    closesocket(ListenSocket);
-    int recievedpackets = 0;
     // Receive until the peer shuts down the connection
     do {
-        iResult = recv(ClientSocket, recvbuf, recvbuflen, 0);
-        if (iResult == -1) return 0;
+        iResult = recv(ClientSocket, recvbuf, 2048, 0);
+        if (iResult == -1)
+        {
+            i_connections -= 1;
+            WSACleanup();
+            return;
+        }
         //std::string recvstr(encryptDecrypt(recvbuf));
         std::string out = encryptDecrypt(recvbuf);
         recievedpackets += 1;
 
         if (std::string(out).substr(0, out.size() - 1).find("loginfatcock") == std::string::npos
             && recievedpackets == 1)
-            return 0;
+            return;
         if (std::string(out) == "clone"
             && recievedpackets == 2)
         {
             std::string byteString = "";
             //send file array
-            std::vector<char> buffer; 
+            std::vector<char> buffer;
 
             //get length of file
             filein.seekg(0, filein.end);
@@ -110,7 +127,7 @@ int __cdecl main(void)
             }
 
             //send dll as bytes
-            printf("Bytes sent: 2048 *  ");
+            printf("[%o] Bytes sent: 2048 *  ", i_connections);
             for (size_t i = 0; i < (buffer.size() / 2048) + 1; i++)
             {
                 try {
@@ -118,19 +135,35 @@ int __cdecl main(void)
                     std::vector<char> localbuffer;
                     std::string sendbuffer{};
                     for (size_t j = (i * 2048); j < (i * 2048) + 2048; j++)
-                        if(j < buffer.size())
+                        if (j < buffer.size())
                             sendbuffer += buffer[j] ^ '\x29';
 
                     iSendResult = send(ClientSocket, sendbuffer.c_str(), 2048, 0);
+                    if (iSendResult == -1) {
+                        i_connections -= 1;
+                        WSACleanup();
+                        return;
+                    }
                     printf("\b%o", i);
                     iResult = recv(ClientSocket, recvbuf, 2048, 0);
+                    if (iResult == -1) {
+                        i_connections -= 1;
+                        WSACleanup();
+                        return;
+                    }
                     std::string retstr = encryptDecrypt(recvbuf);
                     //printf("\n%s", retstr);
                     if (retstr.find("dOK") == std::string::npos)
                         break;
                     //SleepEx(250, false);
                 }
-                catch (...) { printf("An error occured when sending."); }
+                catch (...) 
+                {
+                    printf("[%o] An error occured when sending.", i_connections); 
+                    WSACleanup();
+                    i_connections -= 1;
+                    return;
+                }
             }
         }
         if (recievedpackets != 1) continue;
@@ -139,30 +172,30 @@ int __cdecl main(void)
         filein.seekg(0, filein.beg);
         // Echo the buffer back to the sender
         std::string sendbuffer = "OK." + std::to_string(length);
-        sendbuffer = encryptDecrypt(sendbuffer); 
+        sendbuffer = encryptDecrypt(sendbuffer);
         iSendResult = send(ClientSocket, sendbuffer.c_str(), 2048, 0);
 
-        if (iSendResult == SOCKET_ERROR) {
-            printf("send failed with error: %d\n", WSAGetLastError());
-            closesocket(ClientSocket);
+        if (iSendResult == -1) {
+            i_connections -= 1;
             WSACleanup();
-            return 1;
+            return;
         }
         printf("Bytes sent: %d\n", iSendResult);
     } while (1);
+}
 
-    // shutdown the connection since we're done 
-    iResult = shutdown(ClientSocket, SD_SEND);
-    if (iResult == SOCKET_ERROR) {
-        printf("shutdown failed with error: %d\n", WSAGetLastError());
-        closesocket(ClientSocket);
-        WSACleanup();
-        return 1;
-    }
+std::string encryptDecrypt(std::string toEncrypt) {
+    char key[3] = { 'K', 'C', 'Q' };
+    std::string output = toEncrypt;
 
-    // cleanup
-    closesocket(ClientSocket);
-    WSACleanup();
+    for (int i = 0; i < toEncrypt.size(); i++)
+        output[i] = toEncrypt[i] ^ key[i % (sizeof(key) / sizeof(char))];
 
-    return 0;
+    return output;
+}
+
+std::ifstream::pos_type filesize(const char* filename)
+{
+    std::ifstream in(filename, std::ifstream::ate | std::ifstream::binary);
+    return in.tellg();
 }
