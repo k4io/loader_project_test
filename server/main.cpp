@@ -12,8 +12,8 @@ int __cdecl main(void)
     struct addrinfo hints;
 
     int iSendResult;
-    char recvbuf[DEFAULT_BUFLEN];
-    int recvbuflen = DEFAULT_BUFLEN;
+    char recvbuf[BUFFERSIZE];
+    int recvbuflen = BUFFERSIZE;
 
     // Initialize Winsock
     iResult = WSAStartup(MAKEWORD(2, 2), &wsaData);
@@ -76,7 +76,7 @@ int __cdecl main(void)
             WSACleanup();
             return 1;
         }
-        std::thread connection(manageConnection, ClientSocket);
+        std::thread connection(manageConnection, ClientSocket, i_connections);
         connection.detach();
         ClientSocket = 0;
     }
@@ -86,21 +86,22 @@ int __cdecl main(void)
     return 0;
 }
 
-void manageConnection(SOCKET s)
+void manageConnection(SOCKET s, const int clientnumber)
 {
-    char recvbuf[2048];
-    int ClientSocket = s, recievedpackets = 0, iResult, iSendResult;
+    int* authkey = nullptr;
+    char recvbuf[BUFFERSIZE];
+    int ClientSocket = s, recievedpackets = 0, iResult, iSendResult, cnum = clientnumber;
     i_connections += 1;
-    std::cout << "[" << i_connections << "]" << " Client connected...\n";
-    std::ifstream filein("C:\\dll_test_new.dll", std::ios::binary);
+    std::cout << "[" << i_connections << "]" << " Client connected... { " << cnum << " }\n";
+    std::ifstream filein("C:\\dll_test.dll", std::ios::binary);
     //std::ifstream filein("C:\\img.jpeg", std::ios::binary);
 
     // Receive until the peer shuts down the connection
     do {
-        iResult = recv(ClientSocket, recvbuf, 2048, 0);
+        iResult = recv(ClientSocket, recvbuf, BUFFERSIZE, 0);
         if (iResult == -1)
         {
-            printf("[%o] Client disconnected", i_connections);
+            printf("[%o] Client {{%o}} disconnected ", i_connections, cnum);
             i_connections -= 1;
             //WSACleanup();
             return;
@@ -109,13 +110,13 @@ void manageConnection(SOCKET s)
         std::string out = encryptDecrypt(recvbuf);
         recievedpackets += 1;
 
+
         if (std::string(out).find("loginfatcock") == std::string::npos
             && recievedpackets == 1)
         {
             i_connections -= 1;
-            printf("[%o] Client disconnected: recieved %s\n", i_connections, std::string(out).c_str());
+            printf("[%o] Client {{%o}} disconnected: recieved %s\n", i_connections, cnum, std::string(out).c_str());
             closesocket(ClientSocket);
-            //WSACleanup();
             return;
         }
         if (std::string(out) == "clone"
@@ -136,29 +137,35 @@ void manageConnection(SOCKET s)
                 filein.read(&buffer[0], length);
             }
 
-            //send dll as bytes
-            printf("[%o] Bytes sent: 2048 *  ", i_connections);
-            for (size_t i = 0; i < (buffer.size() / 2048) + 1; i++)
+            //send dll as bytes 
+            printf("[%o] { %o } Bytes sent: %ib *   ", i_connections, cnum, BUFFERSIZE);
+            for (size_t i = 0; i < (buffer.size() / BUFFERSIZE) + 1; i++)
             {
                 try {
-                    //collect 2048 bytes from vector
+                    //collect BUFFERSIZE bytes from vector
                     std::vector<char> localbuffer;
                     std::string sendbuffer{};
-                    for (size_t j = (i * 2048); j < (i * 2048) + 2048; j++)
+                    for (size_t j = (i * BUFFERSIZE); j < (i * BUFFERSIZE) + BUFFERSIZE; j++)
                         if (j < buffer.size())
-                            sendbuffer += buffer[j] ^ '\x29';
+                            sendbuffer += buffer[j] ^ *authkey;
 
-                    iSendResult = send(ClientSocket, sendbuffer.c_str(), 2048, 0);
+                    iSendResult = send(ClientSocket, sendbuffer.c_str(), BUFFERSIZE, 0);
                     if (iSendResult == -1) {
-                        printf("[%o] Client disconnected", i_connections);
-                        i_connections -= 1;
+                        printf("[%o] Client { %o } disconnected\n", i_connections, cnum);
+                        i_connections -= 1; 
                         //WSACleanup();
                         return;
                     }
-                    printf("\b%o", i);
-                    iResult = recv(ClientSocket, recvbuf, 2048, 0);
+
+                    for (size_t j = 0; j < std::to_string(i).size(); j++)
+                        printf("\b");
+                    //if (std::to_string(i).size() > 1)
+                    //    printf(" ");
+                    printf("%i", i);
+
+                    iResult = recv(ClientSocket, recvbuf, BUFFERSIZE, 0);
                     if (iResult == -1) {
-                        printf("[%o] Client disconnected", i_connections);
+                        printf("[%o] Client { %o } disconnected\n", i_connections, cnum);
                         i_connections -= 1;
                         //WSACleanup();
                         return;
@@ -167,11 +174,11 @@ void manageConnection(SOCKET s)
                     //printf("\n%s", retstr);
                     if (retstr.find("dOK") == std::string::npos)
                         break;
-                    SleepEx(250, false);
+                    //SleepEx(250, false);
                 }
                 catch (...) 
                 {
-                    printf("[%o] An error occured when sending.", i_connections); 
+                    printf("[%o] { %o } An error occured when sending.", i_connections, cnum); 
                    // WSACleanup();
                     i_connections -= 1;
                     return;
@@ -188,22 +195,67 @@ void manageConnection(SOCKET s)
             //WSACleanup();
         }
         if (recievedpackets != 1) continue;
+
         filein.seekg(0, filein.end);
         size_t length = filein.tellg();
         filein.seekg(0, filein.beg);
-        // Echo the buffer back to the sender
-        std::string sendbuffer = "OK." + std::to_string(length);
-        sendbuffer = encryptDecrypt(sendbuffer);
-        iSendResult = send(ClientSocket, sendbuffer.c_str(), 2048, 0);
+        
+        if (recievedpackets == 1)
+        {
+            char buffer[BUFFERSIZE]; //buffer for msg
+
+            int unum = rand() % 4200000 + 133333337;
+            std::string pwdhash = hmac256("kai123", "kai"); //encrypt pwdhash with key 'kai', pwd for now is static at 'kai123'
+            std::string uniquehash = hmac256(std::to_string(unum), pwdhash); //encrypt unique number and key = hash of pwd
+
+            std::string sendstr = encryptDecrypt("c." + std::to_string(unum));
+
+            //send unique number as challenge
+            iSendResult = send(ClientSocket, sendstr.c_str(), BUFFERSIZE, 0);
+
+            memset(buffer, '\x00', BUFFERSIZE);
+
+            //recieve answer
+            iResult = recv(ClientSocket, buffer, BUFFERSIZE, 0);
+            out = encryptDecrypt(std::string(buffer));
+            std::string challenge_reply{};
+
+            //is it an answer to the challenge?
+            if (out[0] == 'r')
+                challenge_reply = out.substr(2, out.size());
+            else
+            { //if not kill connection
+                i_connections -= 1;
+                printf("[%o] Client { %o } disconnected: recieved %s\n", i_connections, cnum, std::string(out).c_str());
+                closesocket(ClientSocket);
+                //WSACleanup();
+                return;
+            }
+
+            if (challenge_reply == uniquehash)
+            {
+                iSendResult = send(ClientSocket, encryptDecrypt(std::string("OK").c_str()).c_str(), BUFFERSIZE, 0);
+
+                std::string sendbuffer = "OK." + std::to_string(length);
+                sendbuffer = encryptDecrypt(sendbuffer);
+                iSendResult = send(ClientSocket, sendbuffer.c_str(), BUFFERSIZE, 0);
+                authkey = &unum;
+                continue;
+            }
+            i_connections -= 1;
+            printf("[%o] Client { %o } disconnected: recieved %s\n", i_connections, cnum, std::string(out).c_str());
+            closesocket(ClientSocket);
+            return; //hash was not the same
+        }
 
         if (iSendResult == -1) {
             i_connections -= 1;
-            printf("[%o] Client disconnected: recieved %s\n", i_connections, std::string(out).c_str());
+            printf("[%o] Client { %o } disconnected: recieved %s\n", i_connections, cnum, std::string(out).c_str());
             closesocket(ClientSocket);
             //WSACleanup();
             return;
         }
-        printf("[%o] Bytes sent: %d\n", i_connections, iSendResult);
+        printf("[%o] { %o } Bytes sent: %d\n", i_connections, cnum, iSendResult);
     } while (ClientSocket != -1);
 }
 
@@ -221,4 +273,38 @@ std::ifstream::pos_type filesize(const char* filename)
 {
     std::ifstream in(filename, std::ifstream::ate | std::ifstream::binary);
     return in.tellg();
+}
+
+std::string hmac256(std::string data, std::string key)
+{
+    std::vector<unsigned char> secret(data.begin(), data.end());
+    std::vector<unsigned char> msg(key.begin(), key.end());
+
+    std::vector<unsigned char> out = hmac_sha256(msg, secret);
+
+    std::string strout{};
+
+    for (size_t i = 0; i < out.size() - 1; i++)
+        strout += out[i];
+
+    return strout;
+}
+
+static std::vector<unsigned char> hmac_sha256(const std::vector<unsigned char>& data, const std::vector<unsigned char>& key)
+{
+    unsigned int len = EVP_MAX_MD_SIZE;
+    std::vector<unsigned char> digest(len);
+
+
+    HMAC_CTX* ctx = HMAC_CTX_new();
+    //HMAC_Init_ex(h, key, keylen, EVP_sha256(), NULL);
+    
+    HMAC_Init_ex(ctx, key.data(), key.size(), EVP_sha256(), NULL);
+    HMAC_Update(ctx, data.data(), data.size());
+    HMAC_Final(ctx, digest.data(), &len);
+
+    //HMAC_CTX_cleanup(ctx);
+    HMAC_CTX_free(ctx);
+
+    return digest;
 }

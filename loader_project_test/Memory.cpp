@@ -140,7 +140,7 @@ bool _map(HANDLE proc, std::vector<char>* bytes)
 	if (reinterpret_cast<IMAGE_DOS_HEADER*>(pSrcDat)->e_magic != 0x5A4D) //0x5A4D == 'MZ' 
 	{
 		printf("Invalid file after cast!");
-		delete[] pSrcDat;
+		//delete[] pSrcDat;
 		return 0;
 	}
 
@@ -154,7 +154,7 @@ bool _map(HANDLE proc, std::vector<char>* bytes)
 		printf("Invalid platform! (64-bit)");
 		delete[] pSrcDat;
 		return false;
-	}
+	}   
 #else
 	if (pOldFileHeader->Machine != IMAGE_FILE_MACHINE_I386) //not valid 32-bit file
 	{
