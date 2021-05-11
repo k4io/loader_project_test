@@ -88,8 +88,8 @@ int __cdecl main(void)
 
 void manageConnection(SOCKET s, const int clientnumber)
 {
-    int* authkey = nullptr;
     char recvbuf[BUFFERSIZE];
+    long* authkey{ nullptr };
     int ClientSocket = s, recievedpackets = 0, iResult, iSendResult, cnum = clientnumber;
     i_connections += 1;
     std::cout << "[" << i_connections << "]" << " Client connected... { " << cnum << " }\n";
@@ -107,7 +107,7 @@ void manageConnection(SOCKET s, const int clientnumber)
             return;
         }
         //std::string recvstr(encryptDecrypt(recvbuf));
-        std::string out = encryptDecrypt(recvbuf);
+        std::string out = encryptDecrypt(recvbuf, authkey);
         recievedpackets += 1;
 
 
@@ -170,7 +170,7 @@ void manageConnection(SOCKET s, const int clientnumber)
                         //WSACleanup();
                         return;
                     }
-                    std::string retstr = encryptDecrypt(recvbuf);
+                    std::string retstr = encryptDecrypt(recvbuf, authkey);
                     //printf("\n%s", retstr);
                     if (retstr.find("dOK") == std::string::npos)
                         break;
@@ -184,6 +184,7 @@ void manageConnection(SOCKET s, const int clientnumber)
                     return;
                 }
             }
+            authkey = nullptr;
             printf("\n");
         }
         else if(std::string(out).find("goodbye") != std::string::npos)
@@ -194,6 +195,7 @@ void manageConnection(SOCKET s, const int clientnumber)
             return;
             //WSACleanup();
         }
+
         if (recievedpackets != 1) continue;
 
         filein.seekg(0, filein.end);
@@ -204,20 +206,24 @@ void manageConnection(SOCKET s, const int clientnumber)
         {
             char buffer[BUFFERSIZE]; //buffer for msg
 
-            int unum = rand() % 4200000 + 133333337;
+            srand(time(NULL));
+            long unum = rand() % 99999999999999 + 666666666666;
             std::string pwdhash = hmac256("kai123", "kai"); //encrypt pwdhash with key 'kai', pwd for now is static at 'kai123'
             std::string uniquehash = hmac256(std::to_string(unum), pwdhash); //encrypt unique number and key = hash of pwd
 
-            std::string sendstr = encryptDecrypt("c." + std::to_string(unum));
+            std::string e_str   = "c." + std::to_string(unum);
+            std::string sendstr = encryptDecrypt(e_str, authkey);
 
             //send unique number as challenge
-            iSendResult = send(ClientSocket, sendstr.c_str(), BUFFERSIZE, 0);
+            iSendResult = send(ClientSocket, sendstr.c_str(), BUFFERSIZE, 0); 
+
+            printf("[%o] Sent unique challenge (%ld) to client { %o }\n", i_connections, unum, cnum, std::string(out).c_str());
 
             memset(buffer, '\x00', BUFFERSIZE);
 
             //recieve answer
             iResult = recv(ClientSocket, buffer, BUFFERSIZE, 0);
-            out = encryptDecrypt(std::string(buffer));
+            out = encryptDecrypt(std::string(buffer), authkey);
             std::string challenge_reply{};
 
             //is it an answer to the challenge?
@@ -234,10 +240,11 @@ void manageConnection(SOCKET s, const int clientnumber)
 
             if (challenge_reply == uniquehash)
             {
-                iSendResult = send(ClientSocket, encryptDecrypt(std::string("OK").c_str()).c_str(), BUFFERSIZE, 0);
+                //iSendResult = send(ClientSocket, encryptDecrypt(std::string("OK").c_str(), authkey).c_str(), BUFFERSIZE, 0);
+                printf("[%o] Unique challenge (%ld) passed { %o }\n", i_connections, unum, cnum, std::string(out).c_str());
 
                 std::string sendbuffer = "OK." + std::to_string(length);
-                sendbuffer = encryptDecrypt(sendbuffer);
+                sendbuffer = encryptDecrypt(sendbuffer, authkey);
                 iSendResult = send(ClientSocket, sendbuffer.c_str(), BUFFERSIZE, 0);
                 authkey = &unum;
                 continue;
@@ -259,12 +266,16 @@ void manageConnection(SOCKET s, const int clientnumber)
     } while (ClientSocket != -1);
 }
 
-std::string encryptDecrypt(std::string toEncrypt) {
-    char key[3] = { 'K', 'C', 'Q' };
+std::string encryptDecrypt(std::string toEncrypt, long* authkey) {
+    std::string key{};
+    if (authkey == nullptr)
+        key = "POU";
+    else 
+        key = std::to_string(*authkey);
     std::string output = toEncrypt;
 
     for (int i = 0; i < toEncrypt.size(); i++)
-        output[i] = toEncrypt[i] ^ key[i % (sizeof(key) / sizeof(char))];
+        output[i] = (toEncrypt[i] ^ key[i % key.size()]);
 
     return output;
 }

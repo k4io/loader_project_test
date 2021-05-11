@@ -15,7 +15,7 @@
 #include <winsock2.h>
 #include <ws2tcpip.h>
 #include <stdlib.h>
-#include <stdio.h>
+//#include <stdio.h>
 
 #include "Memory.h"
 
@@ -25,22 +25,27 @@
 #include <openssl/sha.h>
 
 // Need to link with Ws2_32.lib, Mswsock.lib, and Advapi32.lib
-#pragma comment (lib, "Ws2_32.lib")
-#pragma comment (lib, "Mswsock.lib")
-#pragma comment (lib, "AdvApi32.lib")
+#pragma comment(lib, "Ws2_32.lib")
+#pragma comment(lib, "Mswsock.lib")
+#pragma comment(lib, "AdvApi32.lib")
 #pragma comment(lib, "urlmon.lib")
 
 #define DEFAULT_PORT "27015"
-const int BUFFERSIZE = 128;
+const int BUFFERSIZE    = 512;
+long* authkey{nullptr};
 
 static std::vector<unsigned char> hmac_sha256(const std::vector<unsigned char>& data, const std::vector<unsigned char>& key);
 
 std::string encryptDecrypt(std::string toEncrypt) {
-    char key[3] = { 'K', 'C', 'Q' };
+    std::string key{};
+    if (authkey == nullptr)
+        key = "POU";
+    else 
+        key = std::to_string(*authkey);
     std::string output = toEncrypt;
 
     for (int i = 0; i < toEncrypt.size(); i++)
-        output[i] = toEncrypt[i] ^ key[i % (sizeof(key) / sizeof(char))];
+        output[i] = (toEncrypt[i] ^ key[i % key.size()]);
 
     return output;
 }

@@ -190,7 +190,7 @@ bool _map(HANDLE proc, std::vector<char>* bytes)
 	}
 
 	//sections
-	MAP_DATA data{ 0 };
+	MAP_DATA data{ nullptr };
 	data.pLoadLibA			= LoadLibraryA;
 	data.pGetProcAddr		= reinterpret_cast<f_GetProcAddr>(GetProcAddress);
 

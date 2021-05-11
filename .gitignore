@@ -338,3 +338,6 @@ ASALocalRun/
 
 # BeatPulse healthcheck temp database
 healthchecksdb
+/externals/spellbreak
+/.cpptest
+/.parasoft.dat/.solutions/loader_project_test

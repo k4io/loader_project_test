@@ -12,6 +12,7 @@
 #include <string>
 #include <array>
 #include <string_view>
+#include <cstdlib>
 
 #include <windows.h>
 #include <winsock2.h>
@@ -32,11 +33,13 @@
 // #pragma comment (lib, "Mswsock.lib")
 
 #define DEFAULT_PORT "27015"
-const int BUFFERSIZE = 128;
 
-int i_connections = 0;
+const int BUFFERSIZE		= 512;
+int i_connections			= 0;
+//long* authkey{nullptr};
 
-std::string								encryptDecrypt		(std::string toEncrypt);
+
+std::string								encryptDecrypt		(std::string toEncrypt, long* authkey);
 std::ifstream::pos_type					filesize			(const char* filename);
 void									manageConnection	(SOCKET s, int clientnumber);
 std::string								hmac256				(std::string data, std::string key);
